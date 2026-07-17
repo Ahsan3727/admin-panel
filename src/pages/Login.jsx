@@ -1,18 +1,17 @@
-﻿import React, { useState } from 'react';
-import { Container, Row, Col, Card, Form, Button, Alert } from 'react-bootstrap';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../services/api';
 
 const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('admin@groxo.com');
+  const [password, setPassword] = useState('admin123');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   // Redirect if already logged in
-  React.useEffect(() => {
+  useEffect(() => {
     if (localStorage.getItem('adminToken')) {
       navigate('/dashboard', { replace: true });
     }
@@ -21,8 +20,13 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
 
+    if (!email.trim() || !password.trim()) {
+      setError('Enter both email and password.');
+      return;
+    }
+
+    setLoading(true);
     try {
       const { data } = await api.post('/admin/login', { email, password });
       localStorage.setItem('adminToken', data.token);
@@ -30,7 +34,7 @@ const Login = () => {
         _id: data._id,
         name: data.name,
         email: data.email,
-        role: data.role
+        role: data.role,
       }));
       toast.success('Login successful!');
       navigate('/dashboard', { replace: true });
@@ -43,80 +47,50 @@ const Login = () => {
   };
 
   return (
-    <div 
-      className="min-vh-100 d-flex align-items-center justify-content-center"
-      style={{ 
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-      }}
-    >
-      <Container>
-        <Row className="justify-content-center">
-          <Col md={5}>
-            <Card className="shadow-lg border-0">
-              <Card.Body className="p-5">
-                <div className="text-center mb-4">
-                  <div className="mb-3">
-                    <span style={{ fontSize: '48px' }}>🏪</span>
-                  </div>
-                  <h2 className="fw-bold">Groxo Admin</h2>
-                  <p className="text-muted">Sign in to your dashboard</p>
-                </div>
+    <div className="gx-app-shell">
+      <div className="gx-view-full">
+        <div className="gx-login-wrap">
+          <div className="gx-login-logo">🌿</div>
+          <h2 className="gx-login-title">Groxo Admin</h2>
+          <p className="gx-login-sub">Sign in to manage your hub</p>
 
-                {error && <Alert variant="danger" className="text-center">{error}</Alert>}
+          {error && <div className="gx-login-error">{error}</div>}
 
-                <Form onSubmit={handleSubmit}>
-                  <Form.Group className="mb-3">
-                    <Form.Label className="fw-semibold">Email Address</Form.Label>
-                    <Form.Control
-                      type="email"
-                      placeholder="admin@groxo.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      size="lg"
-                      className="bg-light"
-                    />
-                  </Form.Group>
+          <form onSubmit={handleSubmit}>
+            <div className="gx-field" style={{ marginTop: 20 }}>
+              <label htmlFor="loginEmail">Email address</label>
+              <input
+                id="loginEmail"
+                type="email"
+                placeholder="admin@groxo.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+              />
+            </div>
 
-                  <Form.Group className="mb-4">
-                    <Form.Label className="fw-semibold">Password</Form.Label>
-                    <Form.Control
-                      type="password"
-                      placeholder="Enter your password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      size="lg"
-                      className="bg-light"
-                    />
-                  </Form.Group>
+            <div className="gx-field">
+              <label htmlFor="loginPassword">Password</label>
+              <input
+                id="loginPassword"
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
 
-                  <Button
-                    variant="primary"
-                    type="submit"
-                    className="w-100 py-2 fw-semibold"
-                    size="lg"
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <>
-                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                        Signing in...
-                      </>
-                    ) : 'Sign In'}
-                  </Button>
-                </Form>
+            <div className="gx-field">
+              <button type="submit" className="gx-btn gx-btn-primary gx-btn-block" disabled={loading}>
+                {loading ? 'Signing in…' : 'Sign in'}
+              </button>
+            </div>
+          </form>
 
-                <div className="text-center mt-4">
-                  <small className="text-muted">
-                    Default: admin@groxo.com / admin123
-                  </small>
-                </div>
-              </Card.Body>
-            </Card>
-          </Col>
-        </Row>
-      </Container>
+          <p className="gx-login-hint">Default: admin@groxo.com / admin123</p>
+        </div>
+      </div>
     </div>
   );
 };

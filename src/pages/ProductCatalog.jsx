@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  Container, Row, Col, Card, Badge, Modal, Button, Spinner,
-} from 'react-bootstrap';
 import api from '../services/api';
 import { toast } from 'react-toastify';
+import Modal from '../components/Modal';
+
+const STATUS_PILL = { pending: 'accent', approved: 'primary', rejected: 'danger' };
 
 const ProductCatalog = () => {
   const [products, setProducts] = useState([]);
@@ -21,16 +21,6 @@ const ProductCatalog = () => {
     try {
       const { data } = await api.get('/admin/products');
       setProducts(data);
-
-      // 🧪 TEST CODE – verify images are in the database
-      if (data.length > 0) {
-        const withImage = data.find(p => p.image);
-        if (withImage) {
-          console.log('Found product with image:', withImage.image);
-        } else {
-          console.log('No product has an image field set.');
-        }
-      }
     } catch (err) {
       toast.error('Failed to load products');
     } finally {
@@ -40,7 +30,6 @@ const ProductCatalog = () => {
 
   useEffect(() => { fetchProducts(); }, []);
 
-  // Group by category
   const grouped = products.reduce((acc, product) => {
     const cat = product.category || 'Uncategorised';
     if (!acc[cat]) acc[cat] = [];
@@ -67,28 +56,19 @@ const ProductCatalog = () => {
   const triggerFileInput = () => fileInputRef.current?.click();
 
   const handleSaveImage = async () => {
-    if (!selectedProduct || !newImageFile) {
-      toast.error('Please select an image');
-      return;
-    }
+    if (!selectedProduct || !newImageFile) { toast.error('Please select an image'); return; }
     setSaving(true);
     try {
       const formData = new FormData();
       formData.append('productImage', newImageFile);
-
-      await api.put(
-        `/admin/products/${selectedProduct._id}/image`,
-        formData,
-        {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          transformRequest: [(data) => data],
-        }
-      );
+      await api.put(`/admin/products/${selectedProduct._id}/image`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        transformRequest: [(data) => data],
+      });
       toast.success('Image updated');
       setShowImageModal(false);
       fetchProducts();
     } catch (err) {
-      console.error('Image upload error:', err.response?.data || err.message);
       toast.error(err.response?.data?.message || 'Failed to update image');
     } finally {
       setSaving(false);
@@ -96,93 +76,82 @@ const ProductCatalog = () => {
   };
 
   if (loading) {
-    return (
-      <div className="text-center py-5">
-        <Spinner animation="border" variant="primary" />
-        <p className="mt-2">Loading catalog...</p>
-      </div>
-    );
+    return <div className="gx-empty"><div className="gx-glyph">🛍️</div><h4>Loading catalog…</h4></div>;
   }
 
   return (
-    <Container fluid>
-      <h4 className="mb-4">📦 Product Catalog</h4>
-
+    <>
       {Object.keys(grouped).length === 0 ? (
-        <div className="text-center py-4 text-muted">No products yet</div>
+        <div className="gx-empty">
+          <div className="gx-glyph">🛍️</div>
+          <h4>No products yet</h4>
+          <p>Approved products will show up here.</p>
+        </div>
       ) : (
-        Object.keys(grouped).map(category => (
-          <div key={category} className="mb-5">
-            <h5 className="mb-3 text-capitalize fw-bold">{category}</h5>
-            <Row>
-              {grouped[category].map(product => (
-                <Col key={product._id} md={3} className="mb-4">
-                  <Card className="h-100 border-0 shadow-sm rounded-4 overflow-hidden">
-                    <div
-                      className="position-relative"
-                      style={{ paddingTop: '100%', overflow: 'hidden', backgroundColor: '#f8f9fa' }}
+        Object.keys(grouped).map((category) => (
+          <div key={category}>
+            <div className="gx-section-title">{category}</div>
+            <div className="gx-prod-grid">
+              {grouped[category].map((p) => (
+                <div className="gx-prod-card" key={p._id}>
+                  <div className="gx-prod-img" style={p.image ? { backgroundImage: `url(${p.image})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
+                    {!p.image && '🛍️'}
+                    <button
+                      className="gx-btn gx-btn-outline gx-btn-sm"
+                      style={{ position: 'absolute', bottom: 6, right: 6, padding: '4px 8px' }}
+                      onClick={(e) => { e.stopPropagation(); openImageModal(p); }}
                     >
-                      <img
-                        src={product.image || 'https://via.placeholder.com/300?text=No+Image'}
-                        alt={product.name}
-                        className="position-absolute top-0 start-0 w-100 h-100"
-                        style={{ objectFit: 'cover' }}
-                      />
+                      🖼️
+                    </button>
+                  </div>
+                  <div className="gx-prod-body">
+                    <h5>{p.name}</h5>
+                    <div className="gx-prod-price"><span>Wholesale</span><b>Rs.{p.price}</b></div>
+                    <div className="gx-prod-price"><span>Retail</span><b>{p.retailPrice ? `Rs.${p.retailPrice}` : '—'}</b></div>
+                    <div className="gx-prod-price"><span>Stock</span><b>{p.stock} {p.unit}</b></div>
+                    <div style={{ marginTop: 8 }}>
+                      <span className={`gx-pill gx-pill-${STATUS_PILL[p.isApproved ? 'approved' : p.status] || 'muted'}`}>
+                        <span className="gx-pill-dot" />{p.isApproved ? 'approved' : p.status}
+                      </span>
                     </div>
-                    <Card.Body className="d-flex flex-column">
-                      <h6 className="fw-bold text-truncate">{product.name}</h6>
-                      <p className="small text-muted mb-2">
-                        Wholesaler:{' '}
-                        <Badge bg="warning" text="dark">
-                          {product.wholesaler?.storeName || product.wholesaler?.name || 'N/A'}
-                        </Badge>
-                      </p>
-                      <div className="mb-1"><span className="text-muted me-2">Wholesale:</span><span className="fw-semibold">Rs. {product.price}</span></div>
-                      <div className="mb-1"><span className="text-muted me-2">Retail:</span><span className="fw-semibold">{product.retailPrice ? `Rs. ${product.retailPrice}` : '-'}</span></div>
-                      <div className="mb-1"><span className="text-muted me-2">Admin:</span><span className="fw-semibold">{product.adminPrice ? `Rs. ${product.adminPrice}` : '-'}</span></div>
-                      <div className="mb-2"><span className="text-muted me-2">Stock:</span><span className="fw-semibold">{product.stock} {product.unit}</span></div>
-                      <div className="mb-2"><Badge bg={product.isApproved ? 'success' : 'secondary'}>{product.isApproved ? 'Approved' : product.status}</Badge></div>
-                      <Button variant="outline-primary" size="sm" className="mt-auto w-100 rounded-pill" onClick={() => openImageModal(product)}>🖼️ Edit Image</Button>
-                    </Card.Body>
-                  </Card>
-                </Col>
+                  </div>
+                </div>
               ))}
-            </Row>
+            </div>
           </div>
         ))
       )}
 
-      <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileChange} capture />
+      <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileChange} capture="environment" />
 
-      <Modal show={showImageModal} onHide={() => setShowImageModal(false)} centered size="lg">
-        <Modal.Header closeButton><Modal.Title>Edit Product Image – {selectedProduct?.name}</Modal.Title></Modal.Header>
-        <Modal.Body>
-          <div className="text-center mb-4">
-            <div style={{ width: '300px', height: '300px', margin: '0 auto', overflow: 'hidden', borderRadius: '12px', backgroundColor: '#f8f9fa', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {newImagePreview ? (
-                <img src={newImagePreview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              ) : selectedProduct?.image ? (
-                <img src={selectedProduct.image} alt="Current" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              ) : (
-                <span className="text-muted">No image</span>
-              )}
-            </div>
-          </div>
-          <div className="d-flex justify-content-center gap-3">
-            <Button variant="primary" onClick={triggerFileInput}>📁 Choose File</Button>
-            <Button variant="outline-secondary" onClick={triggerFileInput}>📷 Take Photo</Button>
-          </div>
-          <p className="text-center mt-2 text-muted small">Supported formats: JPG, PNG, GIF (max 5MB)</p>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowImageModal(false)}>Cancel</Button>
-          <Button variant="success" onClick={handleSaveImage} disabled={!newImageFile || saving}>
-            {saving ? <Spinner size="sm" animation="border" /> : 'Upload & Save'}
-          </Button>
-        </Modal.Footer>
+      <Modal
+        isOpen={showImageModal}
+        onClose={() => setShowImageModal(false)}
+        title={`Edit image — ${selectedProduct?.name || ''}`}
+        footer={
+          <>
+            <button className="gx-btn gx-btn-outline" onClick={() => setShowImageModal(false)}>Cancel</button>
+            <button className="gx-btn gx-btn-primary" onClick={handleSaveImage} disabled={!newImageFile || saving}>
+              {saving ? 'Uploading…' : 'Upload & save'}
+            </button>
+          </>
+        }
+      >
+        <div style={{ width: 200, height: 200, margin: '0 auto', borderRadius: 16, background: 'var(--bg-sunk)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', fontSize: 70 }}>
+          {newImagePreview ? (
+            <img src={newImagePreview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          ) : selectedProduct?.image ? (
+            <img src={selectedProduct.image} alt="Current" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          ) : '🛍️'}
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 18 }}>
+          <button className="gx-btn gx-btn-primary gx-btn-sm" onClick={triggerFileInput}>📁 Choose file</button>
+          <button className="gx-btn gx-btn-outline gx-btn-sm" onClick={triggerFileInput}>📷 Take photo</button>
+        </div>
+        <p className="gx-muted" style={{ textAlign: 'center', fontSize: '11.5px', marginTop: 10 }}>Supported formats: JPG, PNG, GIF (max 5MB)</p>
       </Modal>
-    </Container>
+    </>
   );
 };
 
-export default ProductCatalog;   // ← This line is mandatory
+export default ProductCatalog;

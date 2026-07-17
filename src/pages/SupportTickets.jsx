@@ -1,41 +1,59 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 
+const STATUS_PILL = { open: 'accent', resolved: 'primary' };
+
 const SupportTickets = () => {
   const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/admin/tickets').then(res => setTickets(res.data.tickets || [])).catch(() => {});
+    api.get('/admin/tickets')
+      .then((res) => setTickets(res.data.tickets || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const resolveTicket = async (id) => {
     try {
       await api.put(`/admin/tickets/${id}`, { status: 'resolved' });
       toast.success('Ticket resolved');
-      setTickets(prev => prev.filter(t => t._id !== id));
-    } catch (err) { toast.error('Failed to resolve'); }
+      setTickets((prev) => prev.filter((t) => t._id !== id));
+    } catch (err) {
+      toast.error('Failed to resolve');
+    }
   };
 
+  const openCount = tickets.filter((t) => t.status === 'open').length;
+
   return (
-    <div>
-      <h2>Support Tickets</h2>
-      <table style={{ width:'100%', borderCollapse:'collapse' }}>
-        <thead><tr style={{ background:'#f1f5f9' }}><th>Subject</th><th>From</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody>
-          {tickets.map(ticket => (
-            <tr key={ticket._id} style={{ borderBottom:'1px solid #e2e8f0' }}>
-              <td>{ticket.subject}</td>
-              <td>{ticket.user?.name || 'N/A'}</td>
-              <td>{ticket.status}</td>
-              <td>
-                {ticket.status === 'open' && <button onClick={() => resolveTicket(ticket._id)} style={{ background:'#4CAF50', color:'#fff', border:'none', padding:'4px 8px', borderRadius:4 }}>Resolve</button>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="gx-section-title gx-mt-0">{loading ? 'Loading…' : `${openCount} open tickets`}</div>
+
+      {!loading && tickets.length === 0 && (
+        <div className="gx-empty">
+          <div className="gx-glyph">🎫</div>
+          <h4>No support tickets</h4>
+          <p>You're all caught up.</p>
+        </div>
+      )}
+
+      {tickets.map((t) => (
+        <div className="gx-stack-card" key={t._id}>
+          <div className="gx-stack-head">
+            <h4 style={{ flex: 1 }}>{t.subject}</h4>
+            <span className={`gx-pill gx-pill-${STATUS_PILL[t.status] || 'muted'}`}><span className="gx-pill-dot" />{t.status}</span>
+          </div>
+          <div className="gx-row-sub" style={{ marginTop: 6 }}>From {t.user?.name || 'N/A'}</div>
+          {t.status === 'open' && (
+            <div className="gx-stack-actions">
+              <button className="gx-btn gx-btn-primary gx-btn-sm" onClick={() => resolveTicket(t._id)}>Mark resolved</button>
+            </div>
+          )}
+        </div>
+      ))}
+    </>
   );
 };
 

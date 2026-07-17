@@ -1,45 +1,59 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const Reports = () => {
   const [salesData, setSalesData] = useState([]);
   const [riderPerf, setRiderPerf] = useState([]);
 
   useEffect(() => {
-    api.get('/admin/reports/sales').then(res => setSalesData(res.data.data || [])).catch(() => {});
-    api.get('/admin/reports/rider-performance').then(res => setRiderPerf(res.data.data || [])).catch(() => {});
+    api.get('/admin/reports/sales').then((res) => setSalesData(res.data.data || [])).catch(() => {});
+    api.get('/admin/reports/rider-performance').then((res) => setRiderPerf(res.data.data || [])).catch(() => {});
   }, []);
 
+  const max = Math.max(1, ...salesData.map((d) => d.revenue || 0));
+
   return (
-    <div>
-      <h2>Reports & Analytics</h2>
-      <div style={{ marginTop:24 }}>
-        <h3>Sales Report</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={salesData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="period" />
-            <YAxis />
-            <Tooltip />
-            <Bar dataKey="revenue" fill="#4CAF50" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-      <div style={{ marginTop:24 }}>
-        <h3>Rider Performance</h3>
-        <table style={{ width:'100%', borderCollapse:'collapse', marginTop:8 }}>
-          <thead><tr style={{ background:'#f1f5f9' }}><th>Rider</th><th>On-Time %</th><th>Rating</th><th>Earnings</th></tr></thead>
-          <tbody>
-            {riderPerf.map(r => (
-              <tr key={r._id} style={{ borderBottom:'1px solid #e2e8f0' }}>
-                <td>{r.name}</td><td>{r.onTime}%</td><td>{r.rating}</td><td>₹{r.earnings}</td>
-              </tr>
+    <>
+      <div className="gx-section-title gx-mt-0">Sales this week</div>
+      <div className="gx-card gx-card-pad">
+        {salesData.length === 0 ? (
+          <div className="gx-empty" style={{ padding: '20px 0' }}>
+            <div className="gx-glyph">📈</div>
+            <h4>No sales data yet</h4>
+          </div>
+        ) : (
+          <div className="gx-bars">
+            {salesData.map((d, i) => (
+              <div className="gx-bar-col" key={i}>
+                <div className="gx-bar" style={{ height: `${((d.revenue || 0) / max * 100).toFixed(0)}%` }} />
+                <span>{d.period}</span>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        )}
       </div>
-    </div>
+
+      <div className="gx-section-title">Rider performance</div>
+      {riderPerf.length === 0 ? (
+        <div className="gx-empty">
+          <div className="gx-glyph">🛵</div>
+          <h4>No rider data yet</h4>
+        </div>
+      ) : (
+        riderPerf.map((r) => (
+          <div className="gx-stack-card" key={r._id}>
+            <div className="gx-stack-head">
+              <h4>{r.name}</h4>
+              <span className="gx-pill gx-pill-accent"><span className="gx-pill-dot" />{r.rating} ★</span>
+            </div>
+            <div className="gx-stack-meta">
+              <div>On-time<b>{r.onTime}%</b></div>
+              <div>Earnings<b>Rs. {(r.earnings || 0).toLocaleString()}</b></div>
+            </div>
+          </div>
+        ))
+      )}
+    </>
   );
 };
 

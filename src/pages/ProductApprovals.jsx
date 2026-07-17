@@ -1,33 +1,33 @@
-﻿import React, { useState, useEffect } from 'react';
-import {
-  Container, Row, Col, Card, Table, Badge, Button,
-  Modal, Form, Spinner, InputGroup,
-} from 'react-bootstrap';
+import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { toast } from 'react-toastify';
+import Modal from '../components/Modal';
+import ProductCatalog from './ProductCatalog';
+
+const STATUS_PILL = { pending: 'accent', approved: 'primary', rejected: 'danger' };
 
 const ProductApprovals = () => {
-  // ────────── Product Approvals State ──────────
+  const [activeTab, setActiveTab] = useState('approvals'); // 'approvals' | 'catalog'
+
+  // Product approvals
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showPriceModal, setShowPriceModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [adminPrice, setAdminPrice] = useState('');
-  const [retailPrice, setRetailPrice] = useState('');   // NEW
+  const [retailPrice, setRetailPrice] = useState('');
 
-  // ────────── Category Management State ──────────
+  // Category management
   const [categories, setCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [newCategoryName, setNewCategoryName] = useState('');
 
-  // ────────── Fetch Data on Mount ──────────
   useEffect(() => {
     fetchPendingProducts();
     fetchCategories();
   }, []);
 
-  // ------------------- Products -------------------
   const fetchPendingProducts = async () => {
     try {
       const { data } = await api.get('/admin/products/pending');
@@ -42,7 +42,7 @@ const ProductApprovals = () => {
   const handleOpenPriceModal = (product) => {
     setSelectedProduct(product);
     setAdminPrice(product.adminPrice || product.wholesalerPrice || '');
-    setRetailPrice(product.retailPrice || '');   // pre-fill retail price
+    setRetailPrice(product.retailPrice || '');
     setShowPriceModal(true);
   };
 
@@ -51,12 +51,13 @@ const ProductApprovals = () => {
     setShowDetailModal(true);
   };
 
-  const handleApprove = async (productId) => {
+  const handleApprove = async () => {
+    if (!selectedProduct) return;
     try {
-      await api.put(`/admin/products/${productId}`, {
+      await api.put(`/admin/products/${selectedProduct._id}`, {
         status: 'approved',
         adminPrice: Number(adminPrice),
-        retailPrice: Number(retailPrice) || 0,   // send retail price
+        retailPrice: Number(retailPrice) || 0,
       });
       toast.success('Product approved!');
       setShowPriceModal(false);
@@ -76,7 +77,6 @@ const ProductApprovals = () => {
     }
   };
 
-  // ------------------- Categories -------------------
   const fetchCategories = async () => {
     try {
       const { data } = await api.get('/categories/admin');
@@ -88,12 +88,8 @@ const ProductApprovals = () => {
     }
   };
 
-  const handleCreateCategory = async (e) => {
-    e.preventDefault();
-    if (!newCategoryName.trim()) {
-      toast.error('Category name required');
-      return;
-    }
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) { toast.error('Category name required'); return; }
     try {
       const { data } = await api.post('/categories/admin', { name: newCategoryName.trim() });
       setCategories([...categories, data.category]);
@@ -115,272 +111,144 @@ const ProductApprovals = () => {
     }
   };
 
-  // ------------------- Render -------------------
-  if (loading || categoriesLoading) {
-    return (
-      <div className="text-center py-5">
-        <Spinner animation="border" variant="primary" />
-        <p className="mt-2">Loading data...</p>
-      </div>
-    );
-  }
-
   return (
-    <Container fluid>
-      <Row>
-        {/* ────────── Product Approvals ────────── */}
-        <Col md={7} className="mb-4">
-          <h4 className="mb-3">📦 Product Approvals</h4>
-          <Card className="border-0 shadow-sm">
-            <Card.Body>
-              {products.length === 0 ? (
-                <div className="text-center py-4 text-muted">No pending products</div>
-              ) : (
-                <Table striped hover responsive>
-                  <thead>
-                    <tr>
-                      <th>Product</th>
-                      <th>Wholesaler</th>
-                      <th>Wholesaler Price</th>
-                      <th>Admin Price</th>
-                      <th>Retail Price</th>      {/* NEW column */}
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {products.map((product) => (
-                      <tr key={product._id}>
-                        <td>
-                          <strong>{product.name}</strong>
-                          {product.image && (
-                            <img src={product.image} alt="" width="40" className="ms-2 rounded" />
-                          )}
-                        </td>
-                        <td>{product.wholesaler?.storeName || product.wholesaler?.name || 'N/A'}</td>
-                        <td>Rs. {product.wholesalerPrice || product.price || 0}</td>
-                        <td>Rs. {product.adminPrice || '-'}</td>
-                        <td>Rs. {product.retailPrice || '-'}</td>   {/* NEW */}
-                        <td>
-                          <Badge
-                            bg={
-                              product.status === 'pending'
-                                ? 'warning'
-                                : product.status === 'approved'
-                                ? 'success'
-                                : 'danger'
-                            }
-                          >
-                            {product.status}
-                          </Badge>
-                        </td>
-                        <td>
-                          {/* Details button always visible */}
-                          <Button
-                            size="sm"
-                            variant="outline-info"
-                            className="me-1"
-                            onClick={() => handleOpenDetailModal(product)}
-                          >
-                            Details
-                          </Button>
-                          {product.status === 'pending' && (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="success"
-                                className="me-1"
-                                onClick={() => handleOpenPriceModal(product)}
-                              >
-                                Approve & Set Price
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                onClick={() => handleReject(product._id)}
-                              >
-                                Reject
-                              </Button>
-                            </>
-                          )}
-                          {product.status === 'rejected' && (
-                            <Button
-                              size="sm"
-                              variant="outline-success"
-                              onClick={() => handleOpenPriceModal(product)}
-                            >
-                              Reconsider
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
+    <>
+      <div className="gx-segmented">
+        <button className={activeTab === 'approvals' ? 'active' : ''} onClick={() => setActiveTab('approvals')}>Approvals</button>
+        <button className={activeTab === 'catalog' ? 'active' : ''} onClick={() => setActiveTab('catalog')}>Catalog</button>
+      </div>
 
-        {/* ────────── Category Management ────────── */}
-        <Col md={5}>
-          <h4 className="mb-3">🏷️ Global Categories</h4>
-          <Card className="border-0 shadow-sm">
-            <Card.Body>
-              <Form onSubmit={handleCreateCategory} className="mb-3">
-                <InputGroup>
-                  <Form.Control
-                    type="text"
-                    placeholder="New category name"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                  />
-                  <Button type="submit" variant="primary">
-                    Add
-                  </Button>
-                </InputGroup>
-              </Form>
+      {activeTab === 'catalog' ? (
+        <ProductCatalog />
+      ) : (
+        <>
+          <div className="gx-section-title">
+            Pending &amp; reviewed
+          </div>
 
-              {categories.length === 0 ? (
-                <p className="text-muted text-center">No categories yet</p>
-              ) : (
-                <ul className="list-group">
-                  {categories.map((cat) => (
-                    <li
-                      key={cat._id}
-                      className="list-group-item d-flex justify-content-between align-items-center"
-                    >
-                      {cat.name}
-                      <Button
-                        size="sm"
-                        variant="outline-danger"
-                        onClick={() => handleDeleteCategory(cat._id)}
-                      >
-                        🗑
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+          {(loading || categoriesLoading) && (
+            <div className="gx-empty"><div className="gx-glyph">🛍️</div><h4>Loading…</h4></div>
+          )}
 
-      {/* ────────── Price Setting Modal (updated) ────────── */}
-      <Modal show={showPriceModal} onHide={() => setShowPriceModal(false)}>
-        <Modal.Header closeButton>
-          <Modal.Title>Set Final Price – {selectedProduct?.name}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Form.Group>
-            <Form.Label>
-              Wholesaler Price: Rs. {selectedProduct?.wholesalerPrice || selectedProduct?.price}
-            </Form.Label>
-            <Form.Control
-              type="number"
-              placeholder="Enter admin selling price"
-              value={adminPrice}
-              onChange={(e) => setAdminPrice(e.target.value)}
-            />
-          </Form.Group>
-          <Form.Group className="mt-3">
-            <Form.Label>Retail Price (optional)</Form.Label>
-            <Form.Control
-              type="number"
-              placeholder="Enter suggested retail price"
-              value={retailPrice}
-              onChange={(e) => setRetailPrice(e.target.value)}
-            />
-          </Form.Group>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowPriceModal(false)}>
-            Cancel
-          </Button>
-          <Button variant="success" onClick={() => handleApprove(selectedProduct._id)}>
-            Approve at Rs. {adminPrice}
-          </Button>
-        </Modal.Footer>
-      </Modal>
-
-      {/* ────────── Product Detail Modal (updated) ────────── */}
-      <Modal
-        show={showDetailModal}
-        onHide={() => setShowDetailModal(false)}
-        size="lg"
-        scrollable
-      >
-        <Modal.Header closeButton>
-          <Modal.Title>📋 Product Details</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          {selectedProduct && (
-            <div className="p-2">
-              {/* Image (if available) */}
-              {selectedProduct.image && (
-                <div className="text-center mb-3">
-                  <img
-                    src={selectedProduct.image}
-                    alt={selectedProduct.name}
-                    style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: '8px' }}
-                  />
-                </div>
-              )}
-
-              {/* Basic Information */}
-              <h5 className="mb-3">{selectedProduct.name}</h5>
-              <Row className="mb-3">
-                <Col md={6}>
-                  <p><strong>Wholesaler:</strong> {selectedProduct.wholesaler?.storeName || selectedProduct.wholesaler?.name || 'N/A'}</p>
-                  <p><strong>Category:</strong> {selectedProduct.category}</p>
-                  <p><strong>Unit:</strong> {selectedProduct.unit || 'N/A'}</p>
-                  <p><strong>Weight:</strong> {selectedProduct.weight ? `${selectedProduct.weight} kg` : 'N/A'}</p>
-                </Col>
-                <Col md={6}>
-                  <p><strong>Wholesaler Price:</strong> Rs. {selectedProduct.wholesalerPrice || selectedProduct.price || 0}</p>
-                  <p><strong>Admin Price:</strong> Rs. {selectedProduct.adminPrice || 'Not set'}</p>
-                  <p><strong>Retail Price:</strong> Rs. {selectedProduct.retailPrice || 'Not set'}</p>   {/* NEW */}
-                  <p><strong>Stock:</strong> {selectedProduct.stock || 0}</p>
-                  <p><strong>Status:</strong>{' '}
-                    <Badge
-                      bg={
-                        selectedProduct.status === 'pending'
-                          ? 'warning'
-                          : selectedProduct.status === 'approved'
-                          ? 'success'
-                          : 'danger'
-                      }
-                    >
-                      {selectedProduct.status}
-                    </Badge>
-                  </p>
-                </Col>
-              </Row>
-
-              {/* Description */}
-              <div className="mb-3">
-                <strong>Description:</strong>
-                <p className="mt-1">{selectedProduct.description || 'No description provided'}</p>
-              </div>
-
-              {/* Additional details if available */}
-              {selectedProduct.isApproved !== undefined && (
-                <p>
-                  <strong>Approval Status:</strong>{' '}
-                  {selectedProduct.isApproved ? 'Approved' : 'Not Approved'}
-                </p>
-              )}
+          {!loading && products.length === 0 && (
+            <div className="gx-empty">
+              <div className="gx-glyph">✅</div>
+              <h4>No pending products</h4>
+              <p>New wholesaler submissions will show up here.</p>
             </div>
           )}
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowDetailModal(false)}>
-            Close
-          </Button>
-        </Modal.Footer>
+
+          {products.map((p) => (
+            <div className="gx-stack-card" key={p._id}>
+              <div className="gx-stack-head">
+                <div style={{ display: 'flex', gap: 11, alignItems: 'center', minWidth: 0 }}>
+                  <div className="gx-row-avatar" style={{ background: 'var(--bg-sunk)', overflow: 'hidden' }}>
+                    {p.image ? <img src={p.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🛍️'}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <h4>{p.name}</h4>
+                    <div className="gx-row-sub">{p.wholesaler?.storeName || p.wholesaler?.name || 'N/A'}</div>
+                  </div>
+                </div>
+                <span className={`gx-pill gx-pill-${STATUS_PILL[p.status] || 'muted'}`}>
+                  <span className="gx-pill-dot" />{p.status}
+                </span>
+              </div>
+              <div className="gx-stack-meta">
+                <div>Wholesaler price<b>Rs. {p.wholesalerPrice || p.price || 0}</b></div>
+                <div>Admin price<b>{p.adminPrice ? `Rs. ${p.adminPrice}` : '—'}</b></div>
+                <div>Retail price<b>{p.retailPrice ? `Rs. ${p.retailPrice}` : '—'}</b></div>
+              </div>
+              <div className="gx-stack-actions">
+                <button className="gx-btn gx-btn-outline gx-btn-sm" onClick={() => handleOpenDetailModal(p)}>Details</button>
+                {p.status === 'pending' && (
+                  <>
+                    <button className="gx-btn gx-btn-primary gx-btn-sm" onClick={() => handleOpenPriceModal(p)}>Approve &amp; set price</button>
+                    <button className="gx-btn gx-btn-danger-outline gx-btn-sm" onClick={() => handleReject(p._id)}>Reject</button>
+                  </>
+                )}
+                {p.status === 'rejected' && (
+                  <button className="gx-btn gx-btn-outline gx-btn-sm" onClick={() => handleOpenPriceModal(p)}>Reconsider</button>
+                )}
+              </div>
+            </div>
+          ))}
+
+          <div className="gx-section-title">Global categories</div>
+          <div className="gx-card gx-card-pad">
+            <div className="gx-field-row gx-mt-0">
+              <div className="gx-field gx-mt-0">
+                <input placeholder="New category name" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} />
+              </div>
+              <button className="gx-btn gx-btn-primary" onClick={handleCreateCategory}>Add</button>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              {categories.length === 0 ? (
+                <p className="gx-muted" style={{ textAlign: 'center', fontSize: 13 }}>No categories yet</p>
+              ) : (
+                categories.map((c) => (
+                  <div className="gx-row-item" key={c._id}>
+                    <div className="gx-row-body gx-row-title">{c.name}</div>
+                    <button className="gx-btn gx-btn-danger-outline gx-btn-sm" onClick={() => handleDeleteCategory(c._id)}>Delete</button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      <Modal
+        isOpen={showPriceModal}
+        onClose={() => setShowPriceModal(false)}
+        title={`Set final price — ${selectedProduct?.name || ''}`}
+        footer={
+          <>
+            <button className="gx-btn gx-btn-outline" onClick={() => setShowPriceModal(false)}>Cancel</button>
+            <button className="gx-btn gx-btn-primary" onClick={handleApprove}>Approve</button>
+          </>
+        }
+      >
+        <div className="gx-field gx-mt-0">
+          <label>Wholesaler price: Rs. {selectedProduct?.wholesalerPrice || selectedProduct?.price}</label>
+          <input type="number" placeholder="Admin selling price" value={adminPrice} onChange={(e) => setAdminPrice(e.target.value)} />
+        </div>
+        <div className="gx-field">
+          <label>Retail price (optional)</label>
+          <input type="number" placeholder="Suggested retail price" value={retailPrice} onChange={(e) => setRetailPrice(e.target.value)} />
+        </div>
       </Modal>
-    </Container>
+
+      <Modal
+        isOpen={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        title="Product details"
+        footer={<button className="gx-btn gx-btn-outline gx-btn-block" onClick={() => setShowDetailModal(false)}>Close</button>}
+      >
+        {selectedProduct && (
+          <>
+            {selectedProduct.image && (
+              <div style={{ textAlign: 'center', marginBottom: 10 }}>
+                <img src={selectedProduct.image} alt={selectedProduct.name} style={{ maxWidth: 200, maxHeight: 200, borderRadius: 16 }} />
+              </div>
+            )}
+            <h3 style={{ textAlign: 'center', margin: '0 0 14px' }}>{selectedProduct.name}</h3>
+            <div className="gx-stack-meta gx-mt-0">
+              <div>Wholesaler<b>{selectedProduct.wholesaler?.storeName || selectedProduct.wholesaler?.name || 'N/A'}</b></div>
+              <div>Category<b>{selectedProduct.category}</b></div>
+              <div>Unit<b>{selectedProduct.unit || 'N/A'}</b></div>
+              <div>Stock<b>{selectedProduct.stock || 0}</b></div>
+              <div>Wholesaler price<b>Rs. {selectedProduct.wholesalerPrice || selectedProduct.price || 0}</b></div>
+              <div>Admin price<b>{selectedProduct.adminPrice ? `Rs. ${selectedProduct.adminPrice}` : 'Not set'}</b></div>
+              <div>Retail price<b>{selectedProduct.retailPrice ? `Rs. ${selectedProduct.retailPrice}` : 'Not set'}</b></div>
+              <div>Status<b>{selectedProduct.status}</b></div>
+            </div>
+            <div className="gx-section-title">Description</div>
+            <p className="gx-muted" style={{ fontSize: 13, lineHeight: 1.5 }}>{selectedProduct.description || 'No description provided'}</p>
+          </>
+        )}
+      </Modal>
+    </>
   );
 };
 

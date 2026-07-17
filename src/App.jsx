@@ -1,12 +1,20 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+// Kept temporarily: pages not yet converted to the new design still use
+// react-bootstrap components. Safe to keep — none of our new `gx-` classes
+// collide with Bootstrap's names. Remove this once every page is done.
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 // Layout Components
-import Sidebar from './components/Sidebar';
-import Header from './components/Header';
+import Sidebar from './components/Sidebar';       // side drawer
+import Header from './components/Header';         // app bar
+import BottomTabBar from './components/BottomTabBar';
+import MoreSheet from './components/MoreSheet';
+
+// Nav config
+import { getPageMeta } from './config/navigation';
 
 // Pages
 import Login from './pages/Login';
@@ -19,11 +27,8 @@ import Transactions from './pages/Transactions';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import SupportTickets from './pages/SupportTickets';
-import Banners from './pages/Banners';   // ✅ newly added
+import Banners from './pages/Banners';
 import ProductCatalog from './pages/ProductCatalog';
-
-// Services
-import api from './services/api';
 
 // --------------------------------------------------------------------
 // ProtectedRoute – must be defined BEFORE any component that uses it
@@ -37,10 +42,12 @@ const ProtectedRoute = ({ children }) => {
 };
 
 // --------------------------------------------------------------------
-// Main App Layout (sidebar + header)
+// Main App Layout — mobile app shell: app bar, drawer, bottom tab bar,
+// "more" sheet. Replaces the old permanent-sidebar desktop layout.
 // --------------------------------------------------------------------
 const AppLayout = ({ children }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -50,41 +57,32 @@ const AppLayout = ({ children }) => {
     navigate('/login');
   };
 
-  const getPageTitle = () => {
-    const path = location.pathname;
-    switch (path) {
-      case '/': return 'Dashboard';
-      case '/dashboard': return 'Dashboard';
-      case '/users': return 'User Management';
-      case '/map': return 'Hub Map';
-      case '/orders': return 'Order Management';
-      case '/products': return 'Product Approvals';
-      case '/transactions': return 'Transactions';
-      case '/reports': return 'Reports';
-      case '/settings': return 'Settings';
-      case '/tickets': return 'Support Tickets';
-      case '/banners': return 'Banners';         // ✅ new title
-      default: return 'Groxo Admin';
-    }
-  };
+  const { title, eyebrow } = getPageMeta(location.pathname);
 
   return (
-    <div className="d-flex" style={{ minHeight: '100vh' }}>
+    <div className="gx-app-shell">
+      <Header
+        title={title}
+        eyebrow={eyebrow}
+        onMenuClick={() => setDrawerOpen(true)}
+      />
+
+      <main className="gx-view">{children}</main>
+
+      <BottomTabBar
+        currentPath={location.pathname}
+        moreOpen={moreOpen}
+        onMoreClick={() => setMoreOpen((v) => !v)}
+      />
+
       <Sidebar
-        isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
         onLogout={handleLogout}
         currentPath={location.pathname}
       />
-      <div
-        className="flex-grow-1 d-flex flex-column"
-        style={{ marginLeft: sidebarOpen ? '250px' : '0', transition: 'margin-left 0.3s' }}
-      >
-        <Header title={getPageTitle()} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
-        <main className="flex-grow-1 p-4" style={{ backgroundColor: '#f8f9fa' }}>
-          {children}
-        </main>
-      </div>
+
+      <MoreSheet isOpen={moreOpen} onClose={() => setMoreOpen(false)} />
     </div>
   );
 };
@@ -99,7 +97,7 @@ function App() {
         {/* Public */}
         <Route path="/login" element={<Login />} />
 
-        {/* Protected routes with layout */}
+        {/* Protected routes with the mobile app shell */}
         <Route path="/" element={
           <ProtectedRoute>
             <AppLayout><Dashboard /></AppLayout>
@@ -125,9 +123,16 @@ function App() {
             <AppLayout><OrderManagement /></AppLayout>
           </ProtectedRoute>
         } />
+        {/* Products now hosts Approvals + Catalog as tabs on one screen
+            (see ProductApprovals.jsx when we get to that page's turn) */}
         <Route path="/products" element={
           <ProtectedRoute>
             <AppLayout><ProductApprovals /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/products-catalog" element={
+          <ProtectedRoute>
+            <AppLayout><ProductCatalog /></AppLayout>
           </ProtectedRoute>
         } />
         <Route path="/transactions" element={
@@ -155,23 +160,22 @@ function App() {
             <AppLayout><Banners /></AppLayout>
           </ProtectedRoute>
         } />
-        <Route path="/products-catalog" element={<ProductCatalog />} />
 
         {/* Catch all – redirect to dashboard */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
       <ToastContainer
-        position="bottom-right"
-        autoClose={3000}
-        hideProgressBar={false}
+        position="bottom-center"
+        autoClose={2200}
+        hideProgressBar
         newestOnTop
         closeOnClick
         rtl={false}
         pauseOnFocusLoss
-        draggable
+        draggable={false}
         pauseOnHover
-        theme="colored"
+        closeButton={false}
       />
     </>
   );

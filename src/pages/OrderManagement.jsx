@@ -1,21 +1,21 @@
-﻿import React, { useState, useEffect } from 'react';
-import {
-  Container, Row, Col, Card, Table, Button, Badge,
-  Modal, Form, Spinner,
-} from 'react-bootstrap';
+import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { toast } from 'react-toastify';
+import Modal from '../components/Modal';
 
-const statusColors = {
-  pending: 'secondary',
-  confirmed: 'info',
-  packing: 'primary',
-  ready_for_pickup: 'warning',
-  out_for_delivery: 'orange',
-  delivered: 'success',
-  cancelled: 'danger',
-  disputed: 'dark',
+const STATUS_TABS = ['', 'pending', 'confirmed', 'packing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'cancelled'];
+
+const STATUS_PILL = {
+  pending: 'accent', confirmed: 'info', packing: 'info',
+  ready_for_pickup: 'accent', out_for_delivery: 'accent',
+  delivered: 'primary', cancelled: 'danger', disputed: 'danger',
 };
+
+const StatusPill = ({ status }) => (
+  <span className={`gx-pill gx-pill-${STATUS_PILL[status] || 'muted'}`}>
+    <span className="gx-pill-dot" />{(status || '').replace(/_/g, ' ')}
+  </span>
+);
 
 const OrderManagement = () => {
   const [orders, setOrders] = useState([]);
@@ -49,10 +49,7 @@ const OrderManagement = () => {
     }
   };
 
-  useEffect(() => {
-    fetchOrders();
-    fetchRiders();
-  }, [statusFilter]);
+  useEffect(() => { fetchOrders(); fetchRiders(); }, [statusFilter]);
 
   const updateStatus = async (orderId, newStatus) => {
     try {
@@ -82,7 +79,6 @@ const OrderManagement = () => {
     setShowModal(true);
   };
 
-  // Bulk Settlement
   const settleAllCOD = async () => {
     if (!window.confirm('Mark ALL unsettled COD orders (all riders) as settled?')) return;
     setSettlingAll(true);
@@ -91,19 +87,22 @@ const OrderManagement = () => {
       toast.success(data.message);
       fetchOrders();
     } catch (error) {
-      const msg = error.response?.data?.message || 'Bulk settlement failed';
-      toast.error(msg);
+      toast.error(error.response?.data?.message || 'Bulk settlement failed');
     } finally {
       setSettlingAll(false);
     }
   };
 
-  // Pay wholesaler group
   const markGroupPaid = async (orderId, groupIndex) => {
     try {
       await api.put(`/admin/orders/${orderId}/pay-wholesaler-group`, { groupIndex });
       toast.success('Wholesaler marked as paid');
-      setShowModal(false);
+      // Keep the modal in sync without a full refetch/close
+      setSelectedOrder((prev) => {
+        if (!prev) return prev;
+        const groups = prev.wholesalerGroups?.map((g, i) => (i === groupIndex ? { ...g, paid: true } : g));
+        return { ...prev, wholesalerGroups: groups };
+      });
       fetchOrders();
     } catch (error) {
       toast.error('Failed to mark wholesaler as paid');
@@ -111,247 +110,133 @@ const OrderManagement = () => {
   };
 
   return (
-    <Container fluid>
-      <Row className="mb-3 align-items-center">
-        <Col>
-          <h4>📦 Order Management</h4>
-        </Col>
-        <Col md={3}>
-          <Form.Select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="">All Orders</option>
-            <option value="pending">Pending</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="packing">Packing</option>
-            <option value="ready_for_pickup">Ready for Pickup</option>
-            <option value="out_for_delivery">Out for Delivery</option>
-            <option value="delivered">Delivered</option>
-            <option value="cancelled">Cancelled</option>
-          </Form.Select>
-        </Col>
-        <Col md="auto">
-          <Button
-            variant="success"
-            onClick={settleAllCOD}
-            disabled={settlingAll}
-          >
-            {settlingAll ? <Spinner size="sm" animation="border" /> : '💵 Settle All COD'}
-          </Button>
-        </Col>
-      </Row>
-
-      <Card className="border-0 shadow-sm">
-        <Card.Body>
-          {loading ? (
-            <div className="text-center py-4">Loading orders...</div>
-          ) : (
-            <Table striped hover responsive>
-              <thead>
-                <tr>
-                  <th>Order ID</th>
-                  <th>Customer</th>
-                  <th>Wholesaler(s)</th>
-                  <th>Rider</th>
-                  <th>Amount</th>
-                  <th>Status</th>
-                  <th>Date</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center">No orders found</td></tr>
-                ) : (
-                  orders.map(order => (
-                    <tr key={order._id}>
-                      <td><small>#{order._id?.slice(-6)}</small></td>
-                      <td>{order.customer?.name || 'N/A'}</td>
-                      <td>
-                        {order.wholesalerGroups?.length > 0
-                          ? order.wholesalerGroups.map(g => g.storeName || g.wholesaler?.name).join(', ')
-                          : (order.wholesaler?.storeName || order.wholesaler?.name || 'N/A')}
-                      </td>
-                      <td>{order.rider?.name || 'Unassigned'}</td>
-                      <td>Rs. {order.payment?.amount || 0}</td>
-                      <td>
-                        <Badge bg={statusColors[order.status] || 'secondary'}>
-                          {order.status?.replace(/_/g, ' ')}
-                        </Badge>
-                      </td>
-                      <td><small>{new Date(order.createdAt).toLocaleDateString()}</small></td>
-                      <td>
-                        <Button
-                          variant="outline-primary"
-                          size="sm"
-                          className="me-1"
-                          onClick={() => openDetailModal(order)}
-                        >
-                          View
-                        </Button>
-                        {order.status === 'pending' && (
-                          <>
-                            <Button
-                              variant="success"
-                              size="sm"
-                              className="me-1"
-                              onClick={() => updateStatus(order._id, 'confirmed')}
-                            >
-                              Confirm
-                            </Button>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={() => updateStatus(order._id, 'cancelled')}
-                            >
-                              Cancel
-                            </Button>
-                          </>
-                        )}
-                        {order.status === 'out_for_delivery' && (
-                          <Button
-                            variant="success"
-                            size="sm"
-                            onClick={() => updateStatus(order._id, 'delivered')}
-                          >
-                            Mark Delivered
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </Table>
-          )}
-        </Card.Body>
-      </Card>
-
-      {/* Order Detail Modal */}
-      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
-        <Modal.Header closeButton>
-          <Modal.Title>Order #{selectedOrder?._id?.slice(-6)}</Modal.Title>
-        </Modal.Header>
-        {selectedOrder && (
-          <Modal.Body>
-  <Row className="mb-3">
-    <Col md={6}>
-      <strong>Customer:</strong> {selectedOrder.customer?.name}<br />
-      <strong>Phone:</strong> {selectedOrder.customer?.phone}<br />
-      <strong>Status:</strong>{' '}
-      <Badge bg={statusColors[selectedOrder.status]}>
-        {selectedOrder.status?.replace(/_/g, ' ')}
-      </Badge>
-    </Col>
-    <Col md={6}>
-      <strong>Rider:</strong> {selectedOrder.rider?.name || 'Unassigned'}<br />
-      <strong>Amount:</strong> Rs. {selectedOrder.payment?.amount}
-    </Col>
-  </Row>
-
-  {/* ---- Wholesaler Info (New or Old) ---- */}
-  {selectedOrder.wholesalerGroups?.length > 0 ? (
     <>
-      <h6>🛍️ Pickup Stops</h6>
-      {selectedOrder.wholesalerGroups.map((group, idx) => (
-        <div key={idx} className="p-2 mb-2 border rounded">
-          <Row className="align-items-center">
-            <Col md={4}>
-              <strong>{group.storeName || group.wholesaler?.name || 'Wholesaler'}</strong>
-            </Col>
-            <Col md={3}>
-              <Badge bg={group.status === 'ready_for_pickup' ? 'success' : 'warning'}>
-                {group.status}
-              </Badge>
-              {group.paid && <Badge bg="info" className="ms-1">Paid</Badge>}
-            </Col>
-            <Col md={5}>
-              {!group.paid && (
-                <Button
-                  variant="warning"
-                  size="sm"
-                  onClick={() => markGroupPaid(selectedOrder._id, idx)}
-                >
-                  Mark Paid
-                </Button>
-              )}
-            </Col>
-          </Row>
-          <Table size="sm" className="mt-2">
-            <thead><tr><th>Product</th><th>Qty</th><th>Price</th></tr></thead>
-            <tbody>
-              {group.items?.map((item, i) => (
-                <tr key={i}>
-                  <td>{item.product?.name || 'Product'}</td>
-                  <td>{item.quantity}</td>
-                  <td>Rs. {item.price}</td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+      <div className="gx-chip-scroll">
+        {STATUS_TABS.map((s) => (
+          <div key={s || 'all'} className={`gx-chip ${statusFilter === s ? 'active' : ''}`} onClick={() => setStatusFilter(s)}>
+            {s === '' ? 'All' : s.replace(/_/g, ' ')}
+          </div>
+        ))}
+      </div>
+
+      <button className="gx-btn gx-btn-primary gx-btn-block" style={{ marginTop: 12 }} onClick={settleAllCOD} disabled={settlingAll}>
+        {settlingAll ? 'Settling…' : '💵 Settle all COD payouts'}
+      </button>
+
+      <div className="gx-section-title">{loading ? 'Loading…' : `${orders.length} orders`}</div>
+
+      {!loading && orders.length === 0 && (
+        <div className="gx-empty">
+          <div className="gx-glyph">📦</div>
+          <h4>No orders found</h4>
+          <p>Try a different status filter.</p>
+        </div>
+      )}
+
+      {orders.map((o) => (
+        <div className="gx-stack-card" key={o._id}>
+          <div className="gx-stack-head">
+            <div>
+              <h4>{o.customer?.name || 'N/A'}</h4>
+              <div className="gx-row-sub gx-mono">#{o._id?.slice(-6)}</div>
+            </div>
+            <StatusPill status={o.status} />
+          </div>
+          <div className="gx-stack-meta">
+            <div>Amount<b>Rs. {o.payment?.amount || 0}</b></div>
+            <div>Rider<b>{o.rider?.name || 'Unassigned'}</b></div>
+            <div>Date<b>{o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '—'}</b></div>
+          </div>
+          <div className="gx-stack-actions">
+            <button className="gx-btn gx-btn-outline gx-btn-sm" onClick={() => openDetailModal(o)}>View details</button>
+            {o.status === 'pending' && (
+              <>
+                <button className="gx-btn gx-btn-primary gx-btn-sm" onClick={() => updateStatus(o._id, 'confirmed')}>Confirm</button>
+                <button className="gx-btn gx-btn-danger-outline gx-btn-sm" onClick={() => updateStatus(o._id, 'cancelled')}>Cancel</button>
+              </>
+            )}
+            {o.status === 'out_for_delivery' && (
+              <button className="gx-btn gx-btn-primary gx-btn-sm" onClick={() => updateStatus(o._id, 'delivered')}>Mark delivered</button>
+            )}
+          </div>
         </div>
       ))}
-    </>
-  ) : (
-    /* Old single‑wholesaler order */
-    <>
-      <Row className="mb-2">
-        <Col md={6}>
-          <strong>Wholesaler:</strong>{' '}
-          {selectedOrder.wholesaler?.storeName || selectedOrder.wholesaler?.name || 'N/A'}
-        </Col>
-      </Row>
-      <h6>Items</h6>
-      <Table size="sm">
-        <thead><tr><th>Product</th><th>Qty</th><th>Price</th></tr></thead>
-        <tbody>
-          {selectedOrder.items?.map((item, i) => (
-            <tr key={i}>
-              <td>{item.product?.name || 'Product'}</td>
-              <td>{item.quantity}</td>
-              <td>Rs. {item.price}</td>
-            </tr>
-          ))}
-        </tbody>
-      </Table>
-    </>
-  )}
 
-  <h6 className="mt-3">Timeline</h6>
-  {selectedOrder.timeline?.map((t, i) => (
-    <div key={i} className="mb-1">
-      <small>
-        {new Date(t.timestamp).toLocaleString()} – {t.status} {t.note && `(${t.note})`}
-      </small>
-    </div>
-  ))}
-
-  <h6 className="mt-3">Assign Rider</h6>
-  <Row className="align-items-end">
-    <Col md={8}>
-      <Form.Select
-        value={assignRiderId}
-        onChange={(e) => setAssignRiderId(e.target.value)}
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={`Order #${selectedOrder?._id?.slice(-6) || ''}`}
+        footer={
+          <>
+            <button className="gx-btn gx-btn-outline" onClick={() => setShowModal(false)}>Close</button>
+            <button className="gx-btn gx-btn-primary" onClick={assignRider}>Assign rider</button>
+          </>
+        }
       >
-        <option value="">Select Rider</option>
-        {riders.map(r => (
-          <option key={r._id} value={r._id}>
-            {r.name} ({r.vehicle?.type || 'Vehicle'})
-          </option>
-        ))}
-      </Form.Select>
-    </Col>
-    <Col md={4}>
-      <Button variant="primary" onClick={assignRider}>
-        Assign
-      </Button>
-    </Col>
-  </Row>
-</Modal.Body>
+        {selectedOrder && (
+          <>
+            <div className="gx-stack-meta gx-mt-0">
+              <div>Customer<b>{selectedOrder.customer?.name}</b></div>
+              <div>Phone<b>{selectedOrder.customer?.phone}</b></div>
+              <div>Status<b>{selectedOrder.status?.replace(/_/g, ' ')}</b></div>
+              <div>Amount<b>Rs. {selectedOrder.payment?.amount}</b></div>
+            </div>
+
+            <div className="gx-section-title">Pickup stops</div>
+            {selectedOrder.wholesalerGroups?.length > 0 ? (
+              selectedOrder.wholesalerGroups.map((g, idx) => (
+                <div className="gx-stack-card" key={idx}>
+                  <div className="gx-stack-head">
+                    <h4>{g.storeName || g.wholesaler?.name || 'Wholesaler'}</h4>
+                    {g.paid ? <span className="gx-pill gx-pill-primary"><span className="gx-pill-dot" />Paid</span> : <StatusPill status={g.status} />}
+                  </div>
+                  {g.items?.map((item, i) => (
+                    <div className="gx-row-item" key={i} style={{ padding: '8px 0' }}>
+                      <div className="gx-row-body"><div className="gx-row-title">{item.product?.name || 'Product'} × {item.quantity}</div></div>
+                      <div className="gx-row-amount">Rs. {item.price}</div>
+                    </div>
+                  ))}
+                  {!g.paid && (
+                    <div className="gx-stack-actions">
+                      <button className="gx-btn gx-btn-accent gx-btn-sm" onClick={() => markGroupPaid(selectedOrder._id, idx)}>Mark wholesaler paid</button>
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="gx-stack-card">
+                <div className="gx-row-sub" style={{ marginBottom: 8 }}>
+                  {selectedOrder.wholesaler?.storeName || selectedOrder.wholesaler?.name || 'N/A'}
+                </div>
+                {selectedOrder.items?.map((item, i) => (
+                  <div className="gx-row-item" key={i} style={{ padding: '8px 0' }}>
+                    <div className="gx-row-body"><div className="gx-row-title">{item.product?.name || 'Product'} × {item.quantity}</div></div>
+                    <div className="gx-row-amount">Rs. {item.price}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="gx-section-title">Timeline</div>
+            {selectedOrder.timeline?.map((t, i) => (
+              <div className="gx-row-sub" style={{ marginBottom: 6 }} key={i}>
+                {new Date(t.timestamp).toLocaleString()} — {t.status}{t.note ? ` (${t.note})` : ''}
+              </div>
+            ))}
+
+            <div className="gx-section-title">Assign rider</div>
+            <div className="gx-field gx-mt-0">
+              <select value={assignRiderId} onChange={(e) => setAssignRiderId(e.target.value)}>
+                <option value="">Select rider</option>
+                {riders.map((r) => (
+                  <option key={r._id} value={r._id}>{r.name} ({r.vehicle?.type || 'Vehicle'})</option>
+                ))}
+              </select>
+            </div>
+          </>
         )}
       </Modal>
-    </Container>
+    </>
   );
 };
 

@@ -1,98 +1,60 @@
-import React from 'react';
-import { Nav } from 'react-bootstrap';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { NAV_ITEMS } from '../config/navigation';
 
-const Sidebar = ({ isOpen, onToggle, onLogout }) => {
-  const location = useLocation();
-  const currentPath = location.pathname;
+/**
+ * Off-canvas nav drawer — replaces the old permanent 250px sidebar.
+ * Opened from the hamburger button in the app bar (Header.jsx).
+ */
+const Sidebar = ({ isOpen, onClose, onLogout, currentPath }) => {
+  const navigate = useNavigate();
 
-  const menuItems = [
-    { path: '/banners', icon: '📢', label: 'Banners' },
-    { path: '/dashboard', icon: '📊', label: 'Dashboard' },
-    { path: '/users', icon: '👥', label: 'User Management' },
-    { path: '/map', icon: '📍', label: 'Hub Map' },
-    { path: '/orders', icon: '📦', label: 'Orders' },
-    { path: '/products-catalog', icon: '📦', label: 'Product Catalog' },
-    { path: '/products', icon: '🛍️', label: 'Products' },
-    { path: '/transactions', icon: '💰', label: 'Transactions' },
-    { path: '/reports', icon: '📈', label: 'Reports' },
-    { path: '/settings', icon: '⚙️', label: 'Settings' },
-    { path: '/tickets', icon: '🎫', label: 'Support Tickets' },
+  // Close on Escape for keyboard users.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
 
-  ];
-
-  if (!isOpen) return null;
+  const go = (path) => {
+    navigate(path);
+    onClose();
+  };
 
   return (
-    <div 
-      className="bg-dark text-white position-fixed h-100" 
-      style={{ 
-        width: '250px', 
-        top: 0, 
-        left: 0, 
-        overflowY: 'auto',
-        zIndex: 1000,
-        transition: 'transform 0.3s ease',
-      }}
-    >
-      {/* Brand */}
-      <div className="p-3 text-center border-bottom border-secondary">
-        <h4 className="mb-0">🏪 Groxo Admin</h4>
-        <small className="text-muted">Management Panel</small>
-      </div>
+    <>
+      <div className={`gx-scrim ${isOpen ? 'show' : ''}`} onClick={onClose} />
+      <aside className={`gx-drawer ${isOpen ? 'show' : ''}`} aria-hidden={!isOpen}>
+        <div className="gx-drawer-head">
+          <div className="gx-brand-mark">🌿</div>
+          <div>
+            <div className="gx-brand-name">Groxo Admin</div>
+            <div className="gx-brand-sub">Hub Management</div>
+          </div>
+        </div>
 
-      {/* Navigation */}
-      <Nav className="flex-column p-3">
-        {menuItems.map((item) => (
-          <Nav.Link
-            key={item.path}
-            as={Link}
-            to={item.path}
-            className={`text-white mb-1 rounded ${
-              currentPath === item.path || currentPath.startsWith(item.path + '/') 
-                ? 'bg-primary' 
-                : ''
-            }`}
-            style={{ 
-              padding: '10px 15px', 
-              transition: 'all 0.2s',
-              cursor: 'pointer'
-            }}
-            onMouseEnter={(e) => {
-              if (currentPath !== item.path && !currentPath.startsWith(item.path + '/')) {
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (currentPath !== item.path && !currentPath.startsWith(item.path + '/')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <span className="me-2">{item.icon}</span>
-            {item.label}
-            {currentPath === item.path && (
-              <span 
-                className="ms-auto" 
-                style={{ fontSize: '8px', color: '#fff' }}
-              >
-                ●
-              </span>
-            )}
-          </Nav.Link>
-        ))}
-      </Nav>
+        <nav className="gx-drawer-list">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.path}
+              className={`gx-drawer-item ${currentPath === item.path ? 'active' : ''}`}
+              onClick={() => go(item.path)}
+            >
+              <span className="gx-di-ico">{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
 
-      {/* Logout Button */}
-      <div className="position-absolute bottom-0 w-100 p-3 border-top border-secondary">
-        <button 
-          className="btn btn-outline-light w-100"
-          onClick={onLogout}
-        >
-          🚪 Logout
+        <button className="gx-drawer-logout" onClick={onLogout}>
+          <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
+            <path d="M9 5H6a1.5 1.5 0 00-1.5 1.5v11A1.5 1.5 0 006 19h3M16 15l4-4-4-4M20 11H9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Log out
         </button>
-      </div>
-    </div>
+      </aside>
+    </>
   );
 };
 
