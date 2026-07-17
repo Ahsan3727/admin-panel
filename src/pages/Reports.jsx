@@ -44,7 +44,7 @@ const Reports = () => {
           <div className="gx-stack-card" key={r._id}>
             <div className="gx-stack-head">
               <h4>{r.name}</h4>
-              <span className="gx-pill gx-pill-accent"><span className="gx-pill-dot" />{r.rating} ★</span>
+              <span className="gx-pill gx-pill-accent"><span className="gx-pill-dot" />{r.rating != null ? `${r.rating} ★` : 'Not rated yet'}</span>
             </div>
             <div className="gx-stack-meta">
               <div>On-time<b>{r.onTime}%</b></div>
