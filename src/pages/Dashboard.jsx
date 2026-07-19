@@ -41,8 +41,11 @@ const Dashboard = () => {
       const ridersPromise = api.get('/admin/riders')
         .then(({ data }) => setActiveRiders(data.filter((r) => r.isActive).length))
         .catch(() => {});
+      // /admin/products/pending returns { products, total, page, pages }
+      // (paginated) rather than a bare array — use `total` for the KPI so
+      // it reflects the true count, not just however many fit on one page.
       const productsPromise = api.get('/admin/products/pending')
-        .then(({ data }) => setPendingProducts(data.length))
+        .then(({ data }) => setPendingProducts(data.total ?? 0))
         .catch(() => {});
       const ticketsPromise = api.get('/admin/tickets')
         .then(({ data }) => setOpenTickets((data.tickets || []).filter((t) => t.status === 'open').length))
