@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 
@@ -16,32 +16,70 @@ const Dashboard = () => {
   const [pendingProducts, setPendingProducts] = useState(0);
   const [openTickets, setOpenTickets] = useState(0);
   const [recentOrders, setRecentOrders] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  // "Live hub status" used to fetch once on mount with no polling and no
+  // manual refresh — so "live" was aspirational. This now polls on an
+  // interval and can be triggered manually too.
+  const loadDashboard = useCallback(async (isManual = false) => {
+    if (isManual) setRefreshing(true);
+    try {
+      // Primary stats — required for the KPI grid. This carries
+      // `activeOrders` and `recentOrders`, so the dashboard doesn't need to
+      // pull the entire order collection just to derive a count and a
+      // top-4 list (that used to happen via a separate `/admin/orders` call).
+      const dashboardPromise = api.get('/admin/dashboard').then(({ data }) => {
+        setStats(data);
+        setActiveOrders(data.activeOrders ?? 0);
+        setRecentOrders(data.recentOrders ?? []);
+      }).catch(() => {});
+
+      // Supplementary data for the rest of the strip. Each call reuses the
+      // same endpoint its own page already relies on, and fails silently
+      // so a missing endpoint never breaks the dashboard.
+      const ridersPromise = api.get('/admin/riders')
+        .then(({ data }) => setActiveRiders(data.filter((r) => r.isActive).length))
+        .catch(() => {});
+      const productsPromise = api.get('/admin/products/pending')
+        .then(({ data }) => setPendingProducts(data.length))
+        .catch(() => {});
+      const ticketsPromise = api.get('/admin/tickets')
+        .then(({ data }) => setOpenTickets((data.tickets || []).filter((t) => t.status === 'open').length))
+        .catch(() => {});
+
+      await Promise.all([dashboardPromise, ridersPromise, productsPromise, ticketsPromise]);
+      setLastUpdated(new Date());
+    } finally {
+      if (isManual) setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
-    // Primary stats — required for the KPI grid. This now also carries
-    // `activeOrders` and `recentOrders`, so the dashboard no longer needs to
-    // pull the entire order collection just to derive a count and a top-4
-    // list (that used to happen via a separate `/admin/orders` call).
-    api.get('/admin/dashboard').then(({ data }) => {
-      setStats(data);
-      setActiveOrders(data.activeOrders ?? 0);
-      setRecentOrders(data.recentOrders ?? []);
-    }).catch(() => {});
-
-    // Supplementary data for the rest of the "live hub status" strip. Each
-    // call reuses the same endpoint its own page already relies on, and
-    // fails silently so a missing endpoint never breaks the dashboard.
-    api.get('/admin/riders').then(({ data }) => setActiveRiders(data.filter((r) => r.isActive).length)).catch(() => {});
-    api.get('/admin/products/pending').then(({ data }) => setPendingProducts(data.length)).catch(() => {});
-    api.get('/admin/tickets').then(({ data }) => setOpenTickets((data.tickets || []).filter((t) => t.status === 'open').length)).catch(() => {});
-  }, []);
+    loadDashboard();
+    const interval = setInterval(() => loadDashboard(), 30000); // poll every 30s
+    return () => clearInterval(interval);
+  }, [loadDashboard]);
 
   return (
     <>
       <div className="gx-pulse-strip">
-        <div className="gx-pulse-row">
-          <span className="gx-pulse-dot" />
-          <span className="gx-pulse-label">Live hub status</span>
+        <div className="gx-pulse-row" style={{ justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="gx-pulse-dot" />
+            <span className="gx-pulse-label">Live hub status</span>
+          </div>
+          <button
+            className="gx-pulse-refresh"
+            onClick={() => loadDashboard(true)}
+            disabled={refreshing}
+            aria-label="Refresh"
+            title={lastUpdated ? `Last updated ${lastUpdated.toLocaleTimeString()}` : 'Refresh'}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={refreshing ? { animation: 'gx-spin 0.8s linear infinite' } : undefined}>
+              <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3.5H10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
         </div>
         <div className="gx-pulse-metrics">
           <div className="gx-pulse-metric"><b>{activeOrders}</b><span>Active orders</span></div>

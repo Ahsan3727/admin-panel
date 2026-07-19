@@ -1,37 +1,73 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import Modal from '../components/Modal';
 
-const STATUS_PILL = { open: 'accent', resolved: 'primary' };
+const STATUS_TABS = [
+  { value: '', label: 'All' },
+  { value: 'open', label: 'Open' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'resolved', label: 'Resolved' },
+  { value: 'closed', label: 'Closed' },
+];
+
+const STATUS_PILL = { open: 'accent', in_progress: 'info', resolved: 'primary', closed: 'muted' };
+const STATUS_LABEL = { open: 'Open', in_progress: 'In progress', resolved: 'Resolved', closed: 'Closed' };
 
 const SupportTickets = () => {
   const [tickets, setTickets] = useState([]);
+  const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const debounceRef = useRef(null);
 
-  const loadTickets = () => {
-    api.get('/admin/tickets')
+  const loadTickets = (statusArg, searchArg) => {
+    setLoading(true);
+    const params = {};
+    if (statusArg) params.status = statusArg;
+    if (searchArg.trim()) params.search = searchArg.trim();
+    api.get('/admin/tickets', { params })
       .then((res) => setTickets(res.data.tickets || []))
-      .catch(() => {})
+      .catch(() => toast.error('Failed to load tickets'))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    loadTickets();
+    loadTickets(statusFilter, search);
+  }, [statusFilter]);
+
+  useEffect(() => {
+    // Staff list for the "Assign to" picker — admin role only. No page/limit
+    // passed, so this gets the plain (non-paginated) array shape from
+    // GET /admin/users.
+    api.get('/admin/users', { params: { role: 'admin' } })
+      .then((res) => setStaff(res.data || []))
+      .catch(() => {});
   }, []);
 
-  const resolveTicket = async (id) => {
+  const handleSearchChange = (value) => {
+    setSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => loadTickets(statusFilter, value), 400);
+  };
+
+  const updateTicket = async (id, payload) => {
+    setUpdating(true);
     try {
-      await api.put(`/admin/tickets/${id}`, { status: 'resolved' });
-      toast.success('Ticket resolved');
-      setTickets((prev) => prev.filter((t) => t._id !== id));
-      setShowModal(false);
+      const { data } = await api.put(`/admin/tickets/${id}`, payload);
+      setTickets((prev) => prev.map((t) => (t._id === data._id ? data : t)));
+      if (selectedTicket?._id === data._id) setSelectedTicket(data);
+      toast.success('Ticket updated');
     } catch (err) {
-      toast.error('Failed to resolve');
+      toast.error(err.response?.data?.message || 'Update failed');
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -61,13 +97,26 @@ const SupportTickets = () => {
 
   return (
     <>
-      <div className="gx-section-title gx-mt-0">{loading ? 'Loading…' : `${openCount} open tickets`}</div>
+      <div className="gx-searchbar gx-mt-0">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5.2" stroke="currentColor" strokeWidth="1.6" /><path d="M14 14l-3-3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+        <input placeholder="Search by subject or customer…" value={search} onChange={(e) => handleSearchChange(e.target.value)} />
+      </div>
+
+      <div className="gx-chip-scroll">
+        {STATUS_TABS.map((s) => (
+          <div key={s.value} className={`gx-chip ${statusFilter === s.value ? 'active' : ''}`} onClick={() => setStatusFilter(s.value)}>
+            {s.label}
+          </div>
+        ))}
+      </div>
+
+      <div className="gx-section-title">{loading ? 'Loading…' : `${openCount} open · ${tickets.length} shown`}</div>
 
       {!loading && tickets.length === 0 && (
         <div className="gx-empty">
           <div className="gx-glyph">🎫</div>
           <h4>No support tickets</h4>
-          <p>You're all caught up.</p>
+          <p>Try a different status filter or search term.</p>
         </div>
       )}
 
@@ -75,9 +124,10 @@ const SupportTickets = () => {
         <div className="gx-stack-card" key={t._id} onClick={() => openDetail(t)} style={{ cursor: 'pointer' }}>
           <div className="gx-stack-head">
             <h4 style={{ flex: 1 }}>{t.subject}</h4>
-            <span className={`gx-pill gx-pill-${STATUS_PILL[t.status] || 'muted'}`}><span className="gx-pill-dot" />{t.status}</span>
+            <span className={`gx-pill gx-pill-${STATUS_PILL[t.status] || 'muted'}`}><span className="gx-pill-dot" />{STATUS_LABEL[t.status] || t.status}</span>
           </div>
           <div className="gx-row-sub" style={{ marginTop: 6 }}>From {t.user?.name || 'N/A'}</div>
+          {t.assignedTo && <div className="gx-row-sub">Assigned to {t.assignedTo.name}</div>}
           {t.message && (
             <div className="gx-row-sub" style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{t.message}</div>
           )}
@@ -85,9 +135,6 @@ const SupportTickets = () => {
             <button className="gx-btn gx-btn-outline gx-btn-sm" onClick={(e) => { e.stopPropagation(); openDetail(t); }}>
               {t.replies?.length ? `View / Reply (${t.replies.length})` : 'View / Reply'}
             </button>
-            {t.status === 'open' && (
-              <button className="gx-btn gx-btn-primary gx-btn-sm" onClick={(e) => { e.stopPropagation(); resolveTicket(t._id); }}>Mark resolved</button>
-            )}
           </div>
         </div>
       ))}
@@ -97,19 +144,42 @@ const SupportTickets = () => {
         onClose={() => setShowModal(false)}
         title={selectedTicket?.subject || 'Ticket'}
         footer={
-          <>
-            <button className="gx-btn gx-btn-outline" onClick={() => setShowModal(false)}>Close</button>
-            {selectedTicket?.status === 'open' && (
-              <button className="gx-btn gx-btn-primary" onClick={() => resolveTicket(selectedTicket._id)}>Mark resolved</button>
-            )}
-          </>
+          <button className="gx-btn gx-btn-outline gx-btn-block" onClick={() => setShowModal(false)}>Close</button>
         }
       >
         {selectedTicket && (
           <>
             <div className="gx-stack-meta gx-mt-0">
               <div>From<b>{selectedTicket.user?.name || 'N/A'}</b></div>
-              <div>Status<b>{selectedTicket.status}</b></div>
+              <div>Status<b>{STATUS_LABEL[selectedTicket.status] || selectedTicket.status}</b></div>
+            </div>
+
+            <div className="gx-field-row">
+              <div className="gx-field gx-mt-0">
+                <label>Status</label>
+                <select
+                  value={selectedTicket.status}
+                  disabled={updating}
+                  onChange={(e) => updateTicket(selectedTicket._id, { status: e.target.value })}
+                >
+                  {STATUS_TABS.filter((s) => s.value).map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="gx-field gx-mt-0">
+                <label>Assign to</label>
+                <select
+                  value={selectedTicket.assignedTo?._id || ''}
+                  disabled={updating}
+                  onChange={(e) => updateTicket(selectedTicket._id, { assignedTo: e.target.value || null })}
+                >
+                  <option value="">Unassigned</option>
+                  {staff.map((s) => (
+                    <option key={s._id} value={s._id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="gx-section-title">Message</div>
