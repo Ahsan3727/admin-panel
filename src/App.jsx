@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import api from './services/api';
+import { disconnectSocket } from './services/socket';
 // Kept temporarily: pages not yet converted to the new design still use
 // react-bootstrap components. Safe to keep — none of our new `gx-` classes
 // collide with Bootstrap's names. Remove this once every page is done.
@@ -99,6 +100,7 @@ const AppLayout = ({ children }) => {
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminInfo');
+    disconnectSocket();
     navigate('/login');
   };
 

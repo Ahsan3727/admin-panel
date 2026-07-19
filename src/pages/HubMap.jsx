@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   MapContainer, TileLayer, Marker, Popup, Circle, Polyline,
-  useMap, ZoomControl
+  useMap, useMapEvents, ZoomControl
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import api from '../services/api';
+import { getSocket } from '../services/socket';
 import { toast } from 'react-toastify';
 import Modal from '../components/Modal';
 
@@ -58,6 +59,21 @@ const MapController = ({ center, zoom }) => {
   return null;
 };
 
+// Reports the current viewport so fetches can be scoped to it instead of
+// always pulling every rider/customer/wholesaler regardless of map position —
+// this is what keeps polling cheap as user counts grow.
+const BoundsWatcher = ({ onBoundsChange }) => {
+  const map = useMapEvents({
+    moveend: () => onBoundsChange(map.getBounds()),
+    zoomend: () => onBoundsChange(map.getBounds()),
+  });
+  useEffect(() => {
+    onBoundsChange(map.getBounds()); // report the initial viewport too
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+};
+
 const FILTERS = [
   { value: 'all', label: 'All' },
   { value: 'online', label: '🟢 Online' },
@@ -83,6 +99,19 @@ const HubMap = () => {
   const [refreshInterval, setRefreshInterval] = useState(10);
   const intervalRef = useRef(null);
 
+  // Current map viewport, debounced — passed to the location endpoints so
+  // they can filter server-side instead of returning full collections.
+  const [bounds, setBounds] = useState(null);
+  const boundsDebounceRef = useRef(null);
+  const handleBoundsChange = useCallback((leafletBounds) => {
+    if (boundsDebounceRef.current) clearTimeout(boundsDebounceRef.current);
+    boundsDebounceRef.current = setTimeout(() => {
+      const sw = leafletBounds.getSouthWest();
+      const ne = leafletBounds.getNorthEast();
+      setBounds({ swLat: sw.lat, swLng: sw.lng, neLat: ne.lat, neLng: ne.lng });
+    }, 400);
+  }, []);
+
   const hubLocation = { lat: 31.72, lng: 72.98 };
   const [riderPaths, setRiderPaths] = useState({});
 
@@ -92,10 +121,13 @@ const HubMap = () => {
 
   const fetchAllLocations = useCallback(async () => {
     try {
+      const params = bounds
+        ? { swLat: bounds.swLat, swLng: bounds.swLng, neLat: bounds.neLat, neLng: bounds.neLng }
+        : {};
       const [ridersRes, customersRes, wholesalersRes] = await Promise.all([
-        api.get('/admin/riders/locations'),
-        api.get('/admin/customers/locations'),
-        api.get('/admin/wholesalers/locations'),
+        api.get('/admin/riders/locations', { params }),
+        api.get('/admin/customers/locations', { params }),
+        api.get('/admin/wholesalers/locations', { params }),
       ]);
 
       const ridersData = (ridersRes.data || []).map((r) => ({ ...r, type: 'rider', location: r.currentLocation || null }));
@@ -130,7 +162,7 @@ const HubMap = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [bounds]);
 
   useEffect(() => { fetchAllLocations(); }, [fetchAllLocations]);
 
@@ -140,6 +172,29 @@ const HubMap = () => {
     }
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [autoRefresh, refreshInterval, fetchAllLocations]);
+
+  // Real-time rider location push — this is what actually keeps rider
+  // positions fresh between polls. REST polling above still runs (and is
+  // still needed for customers/wholesalers, initial load, and status
+  // changes like busy/online that aren't location pings), but rider
+  // position no longer has to wait for the next poll tick.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleLocationUpdate = ({ riderId, lat, lng, lastLocationUpdate }) => {
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.type === 'rider' && u._id === riderId
+            ? { ...u, location: { lat, lng }, lastLocationUpdate: lastLocationUpdate || new Date().toISOString() }
+            : u
+        )
+      );
+    };
+
+    socket.on('rider_location_update', handleLocationUpdate);
+    return () => socket.off('rider_location_update', handleLocationUpdate);
+  }, []);
 
   useEffect(() => {
     let filtered = [...users];
@@ -268,6 +323,7 @@ const HubMap = () => {
           />
           <ZoomControl position="topright" />
           <MapController center={mapCenter} zoom={mapZoom} />
+          <BoundsWatcher onBoundsChange={handleBoundsChange} />
 
           <Marker position={[hubLocation.lat, hubLocation.lng]} icon={hubIcon}>
             <Popup><strong>🏪 Groxo Hub</strong><br /><small>Main Distribution Center – Chiniot</small></Popup>
@@ -287,7 +343,7 @@ const HubMap = () => {
                     {user.type === 'wholesaler' ? (
                       <><br /><small>🏪 {user.storeName || 'Store'}<br />📱 {user.phone}</small></>
                     ) : (
-                      <><br /><small>🛵 {user.vehicle?.type || 'Vehicle'} · ⭐ {user.rating}</small></>
+                      <><br /><small>🛵 {user.vehicle?.type || 'Vehicle'} · {user.vehicle?.plateNumber || 'No plate on file'}</small></>
                     )}
                   </div>
                 </Popup>
@@ -371,10 +427,9 @@ const HubMap = () => {
               <div>Email<b>{selectedUser.email}</b></div>
               <div>Phone<b>{selectedUser.phone}</b></div>
               <div>Vehicle<b>{selectedUser.vehicle?.type} ({selectedUser.vehicle?.plateNumber})</b></div>
-              <div>Rating<b>⭐ {selectedUser.rating} / 5.0</b></div>
               <div>Total deliveries<b>{selectedUser.totalDeliveries || 0}</b></div>
               <div>Today's earnings<b>Rs. {selectedUser.earnings?.today || 0}</b></div>
-              <div>Last active<b>{formatTime(selectedUser.lastActive)}</b></div>
+              <div>Last location update<b>{formatTime(selectedUser.lastLocationUpdate)}</b></div>
               <div>Account status<b style={{ color: selectedUser.isActive ? 'var(--primary)' : 'var(--danger)' }}>{selectedUser.isActive ? 'Active' : 'Inactive'}</b></div>
             </div>
           )

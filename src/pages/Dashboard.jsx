@@ -18,19 +18,19 @@ const Dashboard = () => {
   const [recentOrders, setRecentOrders] = useState([]);
 
   useEffect(() => {
-    // Primary stats — required for the KPI grid.
-    api.get('/admin/dashboard').then(({ data }) => setStats(data)).catch(() => {});
-
-    // Supplementary data for the "live hub status" strip + recent orders list.
-    // Each call reuses the same endpoint its own page already relies on, and
-    // fails silently so a missing endpoint never breaks the dashboard.
-    api.get('/admin/orders').then(({ data }) => {
-      setActiveOrders(data.filter((o) => ['confirmed', 'packing', 'out_for_delivery'].includes(o.status)).length);
-      setRecentOrders(
-        [...data].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 4)
-      );
+    // Primary stats — required for the KPI grid. This now also carries
+    // `activeOrders` and `recentOrders`, so the dashboard no longer needs to
+    // pull the entire order collection just to derive a count and a top-4
+    // list (that used to happen via a separate `/admin/orders` call).
+    api.get('/admin/dashboard').then(({ data }) => {
+      setStats(data);
+      setActiveOrders(data.activeOrders ?? 0);
+      setRecentOrders(data.recentOrders ?? []);
     }).catch(() => {});
 
+    // Supplementary data for the rest of the "live hub status" strip. Each
+    // call reuses the same endpoint its own page already relies on, and
+    // fails silently so a missing endpoint never breaks the dashboard.
     api.get('/admin/riders').then(({ data }) => setActiveRiders(data.filter((r) => r.isActive).length)).catch(() => {});
     api.get('/admin/products/pending').then(({ data }) => setPendingProducts(data.length)).catch(() => {});
     api.get('/admin/tickets').then(({ data }) => setOpenTickets((data.tickets || []).filter((t) => t.status === 'open').length)).catch(() => {});
@@ -99,7 +99,7 @@ const Dashboard = () => {
               <div className="gx-row-avatar">{o.customer?.name?.charAt(0)?.toUpperCase() || '?'}</div>
               <div className="gx-row-body">
                 <div className="gx-row-title">{o.customer?.name || 'N/A'}</div>
-                <div className="gx-row-sub gx-mono">#{o._id?.slice(-6)} · {o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ''}</div>
+                <div className="gx-row-sub gx-mono">{o.orderNumber || `#${o._id?.slice(-6)}`} · {o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ''}</div>
               </div>
               <div className="gx-row-end">
                 <div className="gx-row-amount">Rs. {o.payment?.amount || 0}</div>
