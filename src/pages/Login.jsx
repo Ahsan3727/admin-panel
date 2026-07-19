@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../services/api';
 
 const Login = () => {
-  const [email, setEmail] = useState('admin@groxo.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -88,7 +88,9 @@ const Login = () => {
             </div>
           </form>
 
-          <p className="gx-login-hint">Default: admin@groxo.com / admin123</p>
+          {import.meta.env.DEV && (
+            <p className="gx-login-hint">Dev mode: use your seeded admin credentials to sign in.</p>
+          )}
         </div>
       </div>
     </div>

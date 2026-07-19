@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import api from './services/api';
 // Kept temporarily: pages not yet converted to the new design still use
 // react-bootstrap components. Safe to keep — none of our new `gx-` classes
 // collide with Bootstrap's names. Remove this once every page is done.
@@ -32,12 +33,56 @@ import ProductCatalog from './pages/ProductCatalog';
 
 // --------------------------------------------------------------------
 // ProtectedRoute – must be defined BEFORE any component that uses it
+//
+// Previously this only checked whether a token *existed* in localStorage,
+// not whether it was still valid. That meant an expired/invalid token let
+// the full app shell render, and the user only got bounced to /login after
+// the first API call failed with a 401. This now validates the token
+// against GET /admin/me once on mount and shows a loading state until
+// that resolves, so an expired session never renders protected content.
 // --------------------------------------------------------------------
 const ProtectedRoute = ({ children }) => {
-  const token = localStorage.getItem('adminToken');
-  if (!token) {
+  const [status, setStatus] = useState('checking'); // 'checking' | 'valid' | 'invalid'
+
+  useEffect(() => {
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      setStatus('invalid');
+      return;
+    }
+
+    let cancelled = false;
+    api
+      .get('/admin/me')
+      .then(() => {
+        if (!cancelled) setStatus('valid');
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('invalid');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (status === 'checking') {
+    return (
+      <div className="gx-app-shell">
+        <div
+          className="gx-view-full"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}
+        >
+          <span>Loading…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'invalid') {
     return <Navigate to="/login" replace />;
   }
+
   return children;
 };
 

@@ -24,10 +24,22 @@ const emptyEditForm = {
 const ProductCatalog = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [categories, setCategories] = useState([]);
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+
+  // Server-side pagination — `products` accumulates as more pages load.
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const searchDebounceRef = useRef(null);
+
+  // CSV import/export
+  const csvInputRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Image modal
   const [showImageModal, setShowImageModal] = useState(false);
@@ -42,15 +54,31 @@ const ProductCatalog = () => {
   const [editForm, setEditForm] = useState(emptyEditForm);
   const [savingEdit, setSavingEdit] = useState(false);
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (targetPage = 1, append = false) => {
+    if (append) setLoadingMore(true); else setLoading(true);
     try {
-      const { data } = await api.get('/admin/products');
-      setProducts(data);
+      const { data } = await api.get('/admin/products', {
+        params: {
+          page: targetPage,
+          limit: 50,
+          search: search.trim() || undefined,
+          category: categoryFilter !== 'all' ? categoryFilter : undefined,
+        },
+      });
+      setProducts((prev) => (append ? [...prev, ...data.products] : data.products));
+      setPage(data.page);
+      setTotalPages(data.pages);
+      setTotal(data.total);
     } catch (err) {
       toast.error('Failed to load products');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
+  };
+
+  const handleLoadMore = () => {
+    if (page < totalPages && !loadingMore) fetchProducts(page + 1, true);
   };
 
   const fetchCategories = async () => {
@@ -62,7 +90,18 @@ const ProductCatalog = () => {
     }
   };
 
-  useEffect(() => { fetchProducts(); fetchCategories(); }, []);
+  useEffect(() => { fetchCategories(); }, []);
+
+  // Refetch from page 1 whenever the search term or category filter changes,
+  // debounced so typing doesn't fire a request per keystroke.
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      fetchProducts(1, false);
+    }, 350);
+    return () => clearTimeout(searchDebounceRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, categoryFilter]);
 
   // Merge global categories with any category already used on a product,
   // so nothing already saved on a product ever "disappears" from the dropdown.
@@ -72,20 +111,7 @@ const ProductCatalog = () => {
     return Array.from(names).sort();
   }, [categories, products]);
 
-  const filteredProducts = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return products.filter((p) => {
-      const matchesCategory = categoryFilter === 'all' || (p.category || 'Uncategorised') === categoryFilter;
-      const matchesSearch = !term
-        || p.name?.toLowerCase().includes(term)
-        || p.category?.toLowerCase().includes(term)
-        || p.wholesaler?.storeName?.toLowerCase().includes(term)
-        || p.wholesaler?.name?.toLowerCase().includes(term);
-      return matchesCategory && matchesSearch;
-    });
-  }, [products, search, categoryFilter]);
-
-  const grouped = filteredProducts.reduce((acc, product) => {
+  const grouped = products.reduce((acc, product) => {
     const cat = product.category || 'Uncategorised';
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(product);
@@ -201,9 +227,66 @@ const ProductCatalog = () => {
     }
   };
 
-  if (loading) {
-    return <div className="gx-empty"><div className="gx-glyph">🛍️</div><h4>Loading catalog…</h4></div>;
-  }
+  // ---------- CSV export ----------
+  const handleExportCSV = async () => {
+    setExporting(true);
+    try {
+      const response = await api.get('/admin/products/export', {
+        params: {
+          search: search.trim() || undefined,
+          category: categoryFilter !== 'all' ? categoryFilter : undefined,
+        },
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'text/csv' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `groxo-catalog-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error('Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ---------- CSV import ----------
+  const triggerCsvInput = () => csvInputRef.current?.click();
+
+  const handleCsvFileChange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = ''; // allow re-selecting the same file next time
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append('csvFile', file);
+      const { data } = await api.post('/admin/products/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        transformRequest: [(d) => d],
+      });
+
+      if (data.created || data.updated) {
+        toast.success(`Import done: ${data.created} created, ${data.updated} updated`);
+      }
+      if (data.errors?.length) {
+        toast.error(`${data.errors.length} row(s) skipped — first issue: ${data.errors[0]}`);
+      }
+      if (!data.created && !data.updated && !data.errors?.length) {
+        toast.error('Nothing was imported — check the CSV columns');
+      }
+
+      fetchProducts();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   return (
     <>
@@ -212,26 +295,42 @@ const ProductCatalog = () => {
         <input placeholder="Search product, category or wholesaler…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        <button className="gx-btn gx-btn-outline gx-btn-sm" onClick={handleExportCSV} disabled={exporting}>
+          {exporting ? 'Exporting…' : '⬇️ Export CSV'}
+        </button>
+        <button className="gx-btn gx-btn-outline gx-btn-sm" onClick={triggerCsvInput} disabled={importing}>
+          {importing ? 'Importing…' : '⬆️ Import CSV'}
+        </button>
+        <input type="file" accept=".csv,text/csv" ref={csvInputRef} style={{ display: 'none' }} onChange={handleCsvFileChange} />
+      </div>
+
       <div className="gx-chip-scroll">
         <div className={`gx-chip ${categoryFilter === 'all' ? 'active' : ''}`} onClick={() => setCategoryFilter('all')}>
           All categories
         </div>
-        {Array.from(new Set(products.map((p) => p.category || 'Uncategorised'))).sort().map((cat) => (
+        {categoryOptions.map((cat) => (
           <div key={cat} className={`gx-chip ${categoryFilter === cat ? 'active' : ''}`} onClick={() => setCategoryFilter(cat)}>
             {cat}
           </div>
         ))}
       </div>
 
-      <div className="gx-section-title">{`${filteredProducts.length} product${filteredProducts.length === 1 ? '' : 's'}`}</div>
+      <div className="gx-section-title">
+        {loading ? 'Loading…' : `${total} product${total === 1 ? '' : 's'}${products.length < total ? ` (${products.length} loaded)` : ''}`}
+      </div>
 
-      {Object.keys(grouped).length === 0 ? (
+      {loading ? (
+        <div className="gx-empty"><div className="gx-glyph">🛍️</div><h4>Loading catalog…</h4></div>
+      ) : Object.keys(grouped).length === 0 ? (
         <div className="gx-empty">
           <div className="gx-glyph">🛍️</div>
           <h4>No products found</h4>
           <p>Try a different search term or category filter.</p>
         </div>
-      ) : (
+      ) : null}
+
+      {!loading && Object.keys(grouped).length > 0 && (
         Object.keys(grouped).sort().map((category) => (
           <div key={category}>
             <div className="gx-section-title">{category}</div>
@@ -283,6 +382,14 @@ const ProductCatalog = () => {
             </div>
           </div>
         ))
+      )}
+
+      {!loading && page < totalPages && (
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '14px 0' }}>
+          <button className="gx-btn gx-btn-outline" onClick={handleLoadMore} disabled={loadingMore}>
+            {loadingMore ? 'Loading…' : `Load more (${total - products.length} remaining)`}
+          </button>
+        </div>
       )}
 
       <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileChange} capture="environment" />
