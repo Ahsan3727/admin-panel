@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import Modal from '../components/Modal';
+import { compressImage } from '../utils/compressImage';
 
 const STATUS_PILL = { pending: 'accent', approved: 'primary', rejected: 'danger' };
 const UNITS = ['piece', 'kg', 'liter', 'pack', 'box', 'dozen', 'other'];
@@ -126,9 +127,10 @@ const ProductCatalog = () => {
     setShowImageModal(true);
   };
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const handleFileChange = async (e) => {
+    const rawFile = e.target.files[0];
+    if (!rawFile) return;
+    const file = await compressImage(rawFile);
     setNewImageFile(file);
     const reader = new FileReader();
     reader.onloadend = () => setNewImagePreview(reader.result);
@@ -392,7 +394,7 @@ const ProductCatalog = () => {
         </div>
       )}
 
-      <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileChange} capture="environment" />
+      <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileChange} />
 
       {/* ---------- Image modal ---------- */}
       <Modal

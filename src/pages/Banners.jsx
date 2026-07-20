@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import Modal from '../components/Modal';
+import { compressImage } from '../utils/compressImage';
 
 const emptyForm = { imageUrl: '', link: '', isActive: true, order: 0, startDate: '', endDate: '' };
 
@@ -57,8 +58,9 @@ const Banners = () => {
   const triggerFileInput = () => fileInputRef.current?.click();
 
   const handleFileChange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const rawFile = e.target.files[0];
+    if (!rawFile) return;
+    const file = await compressImage(rawFile);
 
     const reader = new FileReader();
     reader.onloadend = () => setLocalPreview(reader.result);
